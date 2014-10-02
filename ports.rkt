@@ -14,8 +14,8 @@
 ;; A functional read-bytes-avail is sorely lacking.
 
 (define (read-bytes-avail prt)
-  (define buffer (make-bytes 8192))
-  (define toret (read-bytes-avail! buffer))
+  (define buffer (make-bytes 49152))
+  (define toret (read-bytes-avail! buffer prt))
   (cond
     [(eof-object? toret) eof]
     [else (subbytes buffer 0 toret)]))

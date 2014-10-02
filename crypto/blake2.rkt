@@ -55,13 +55,8 @@
              (bytes-length msg)
              (bytes-length key)))
   (when (not (zero? retcode))
-    (error "blake2s returned error code" retcode))
+    (error "blake2b returned error code" retcode))
   out)
 
 (provide blake2/256
          blake2/512)
-
-(time
- (for ([i 64])
-   (for ([i 1024])
-     (blake2/256 (make-bytes 16384)))))

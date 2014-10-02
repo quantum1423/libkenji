@@ -18,15 +18,8 @@
       (for ([el (unbox (__dtor_list))])
         (el))))))
 
-(define-syntax-rule (defer! exp1 ...)
+(define-syntax-rule (defer exp1 ...)
   (set-box! (__dtor_list) (cons (thunk exp1 ...) (unbox (__dtor_list)))))
-
-;; (concurrent ...): simple macro for threads to save typing
-
-(define-syntax-rule (concurrent exp1 ...)
-  (thread
-   (thunk
-    exp1 ...)))
 
 ;; attributes: assign attributes to arbitrary objects; implemented by weak hash tables
 
@@ -36,7 +29,7 @@
 (define (attr-set! obj key val)
   (guard
    (semaphore-wait __attr_lock)
-   (defer! (semaphore-post __attr_lock))
+   (defer (semaphore-post __attr_lock))
    (when (not (hash-has-key? __attr_table obj))
      (hash-set! __attr_table obj (make-hash)))
    (hash-set! (hash-ref __attr_table obj) key val)))
@@ -44,7 +37,7 @@
 (define (attr-del! obj key val)
   (guard
    (semaphore-wait __attr_lock)
-   (defer! (semaphore-post __attr_lock))
+   (defer (semaphore-post __attr_lock))
    (when (not (hash-has-key? __attr_table obj))
      (hash-set! __attr_table obj (make-hash)))
    (hash-remove! (hash-ref __attr_table obj) key val)))
@@ -52,13 +45,13 @@
 (define (attr-get obj key)
   (guard
    (semaphore-wait __attr_lock)
-   (defer! (semaphore-post __attr_lock))
+   (defer (semaphore-post __attr_lock))
    (hash-ref (hash-ref __attr_table obj) key)))
 
 (define (attr-have? obj key)
   (guard
    (semaphore-wait __attr_lock)
-   (defer! (semaphore-post __attr_lock))
+   (defer (semaphore-post __attr_lock))
    (and (hash-has-key? __attr_table obj)
         (hash-has-key? (hash-ref __attr_table obj) key))))
 
@@ -74,24 +67,19 @@
 (define (sync/id evt1 . rst)
   (apply sync (map id-evt (cons evt1 rst))))
 
-;; chans: two unrelated types for async and sync channels is horrible!
 
-(define (chan? ch)
-  (or (async-channel? ch)
-      (channel? ch)))
+;; imprison: run the block in a new custodian. When control flow goes out of the block, everything is destroyed!
+(define __god_custodian (current-custodian))
 
-(define (chan-send ch val)
-  (cond
-    [(async-channel? ch) (async-channel-put ch val)]
-    [(channel? ch) (channel-put ch val)]))
-
-(define (chan-recv ch)
-  (cond
-    [(async-channel? ch) (async-channel-get ch)]
-    [(channel? ch) (channel-get ch)]))
-
-(define (make-chan (limit 0))
-  (cond
-    [(equal? 0 limit) (make-channel)]
-    [else (make-async-channel limit)]))
+(define-syntax-rule (imprison exp1 ...)
+  (let ([cst (make-custodian)])
+    (parameterize ([current-custodian cst])
+      (guard
+       ;(defer (custodian-shutdown-all cst))
+       (defer (for ([elem (custodian-managed-list cst __god_custodian)])
+                (cond
+                  [(output-port? elem) (close-output-port elem)]
+                  [(input-port? elem) (close-input-port elem)]
+                  [(thread? elem) (break-thread elem)])))
+       exp1 ...))))
 

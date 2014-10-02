@@ -97,7 +97,7 @@
                         ctx))
   (when (not (zero? rc))
     (error (error_to_string rc)))
-  (set-finalizer! ctx (lambda(ctx)
+  (set-finalizer! ctx (lambda (ctx)
                         (ctr_done ctx)))
   
   (lambda (lol)
@@ -107,3 +107,44 @@
     (when (not (zero? rc))
       (error (error_to_string rc)))
     tgt))
+
+(provide make-ctr-chugger)
+
+;; SOBER-128
+
+(define-tc sober128_start
+  (_fun _pointer ; ctx
+        -> _int))
+
+(define-tc sober128_add_entropy
+  (_fun _pointer ; key
+        _int     ; keylen
+        _pointer ; ctx
+        -> _int))
+
+(define-tc sober128_read
+  (_fun _pointer ; buffer
+        _int     ; buflen
+        _pointer ; ctx
+        -> _int))
+
+(define (make-sober128-chugger #:key key)
+  (define ctx (malloc 'atomic 16384))
+  (define rc (sober128_start ctx))
+  (when (not (zero? rc))
+    (error (error_to_string rc)))
+  
+  (define lol (sober128_add_entropy key (bytes-length key)
+                                    ctx))
+  (when (not (zero? lol))
+    (error (error_to_string lol)))
+  
+  (lambda(x)
+    (define other (bytes-copy x))
+    (define len (sober128_read other (bytes-length other)
+                               ctx))
+    (when (not (= len (bytes-length other)))
+      (error "SOBER128 read error"))
+    other))
+
+(provide make-sober128-chugger)
