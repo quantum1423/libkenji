@@ -91,3 +91,55 @@
                                           #f skip)]))]))
 
 (provide print-tree)
+
+;; Functional deque.
+
+(struct deque (a b) #:prefab)
+
+(define (make-deque)
+  (deque empty empty))
+
+(define (deque-get-front deq)
+  (match deq
+    [(deque '() '()) (error "Cannot get-front an empty deque")]
+    [(deque '() rst) (deque-get-front (deque (reverse rst) empty))]
+    [(deque a b) (car a)]))
+
+(define (deque-not-front deq)
+  (match deq
+    [(deque '() '()) (error "lel")]
+    [(deque '() rst) (deque-not-front (deque (reverse rst) empty))]
+    [(deque a b) (deque (cdr a) b)]))
+
+(define (deque-put-front deq el)
+  (match deq
+    [(deque a b) (deque (cons el a) b)]))
+
+(define (deque-get-back deq)
+  (match deq
+    [(deque '() '()) (error "Cannot get-back an empty deque")]
+    [(deque lel '()) (deque-get-back (deque '() (reverse lel)))]
+    [(deque a b) (car b)]))
+
+(define (deque-not-back deq)
+  (match deq
+    [(deque '() '()) (error "lel")]
+    [(deque rst '()) (deque-not-back (deque empty (reverse rst)))]
+    [(deque a b) (deque a (cdr b))]))
+
+(define (deque-put-back deq el)
+  (match deq
+    [(deque a b) (deque a (cons el b))]))
+
+(define (deque->list deq)
+  (match deq
+    [(deque a b) (append a (reverse b))]))
+
+(provide make-deque
+         deque-get-front
+         deque-not-front
+         deque-put-front
+         deque-get-back
+         deque-not-back
+         deque-put-back
+         deque->list)

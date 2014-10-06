@@ -1,4 +1,6 @@
 #lang racket
+(require "misc.rkt")
+(require "control-flow.rkt")
 
 #| PORT-RELATED CONVENIENCE FUNCTIONS |#
 
@@ -21,3 +23,26 @@
     [else (subbytes buffer 0 toret)]))
 
 (provide read-bytes-avail)
+
+;; Hard-flushes a pipe, so to speak. FIXME: Uses ugly polling currently.
+
+(define (pipe-output-port? prt)
+  (with-handlers ([exn:fail? (lambda x #f)])
+    (pipe-content-length prt)
+    #t))
+
+(define (flush-output-port prt)
+  (cond
+    [(pipe-output-port? prt)
+     (let loop ([n 0])
+       (flush-output prt)
+       (cond
+         [(zero? (pipe-content-length prt)) (void)]
+         [(< n 10) (sleep 0) (loop (add1 n))]
+         [(< n 20) (sleep 0.05) (loop (add1 n))]
+         [(< n 100) (sleep 0.2) (loop (add1 n))]
+         [(< n 200) (sleep 1) (loop (add1 n))]
+         [else (error "flush-output-port timed out. Deadlock?")]))]
+    [else (flush-output prt)]))
+
+(provide flush-output-port)

@@ -34,6 +34,14 @@
       (guard
        exp1 ...)))))
 
+;; with-lock: 'nuff said
+(define-syntax-rule (with-lock lck exp1 ...)
+  (begin
+    (semaphore-wait lck)
+    (guard
+     (defer (semaphore-post lck))
+     exp1 ...)))
+
 ;; Yarns communicate with blocking, *bidirectional*, channels. Send returns a val.
 ;; Using thread-send etc is *UNSAFE*
 
