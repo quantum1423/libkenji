@@ -1,6 +1,7 @@
 #lang racket
 (require "misc.rkt")
 (require "control-flow.rkt")
+(require "concurrency.rkt")
 
 #| PORT-RELATED CONVENIENCE FUNCTIONS |#
 
@@ -13,7 +14,7 @@
 
 (provide close-port)
 
-;; A functional read-bytes-avail is sorely lacking.
+;; A "functional" read-bytes-avail is sorely lacking.
 
 (define (read-bytes-avail prt)
   (define buffer (make-bytes 49152))
@@ -24,25 +25,72 @@
 
 (provide read-bytes-avail)
 
-;; Hard-flushes a pipe, so to speak. FIXME: Uses ugly polling currently.
+;; A saner pipe. Writes buffer, and flushes, well, flush the buffer.
+;; The public interface is named "tube", lol.
 
-(define (pipe-output-port? prt)
-  (with-handlers ([exn:fail? (lambda x #f)])
-    (pipe-content-length prt)
-    #t))
+(define (make-tube)
+  (define sp (make-sane-pipe))
+  (define in
+    (make-input-port
+     'tube-in
+     (lambda (bts)
+       (sane-pipe-read! sp bts))
+     #f
+     (lambda ()
+       (sane-pipe-close sp))))
+  (define out
+    (make-output-port
+     'tube-out
+     (sane-pipe-out sp)
+     (lambda (to-write
+              start-pos
+              end-pos
+              flush?
+              lel)
+       (define x (sane-pipe-write sp (subbytes to-write start-pos end-pos)))
+       (when flush? (sane-pipe-flush sp))
+       x)
+     (lambda()
+       (sane-pipe-flush sp)
+       (sane-pipe-close sp))))
+  (values in out))
 
-(define (flush-output-port prt)
-  (cond
-    [(pipe-output-port? prt)
-     (let loop ([n 0])
-       (flush-output prt)
-       (cond
-         [(zero? (pipe-content-length prt)) (void)]
-         [(< n 10) (sleep 0) (loop (add1 n))]
-         [(< n 20) (sleep 0.05) (loop (add1 n))]
-         [(< n 100) (sleep 0.2) (loop (add1 n))]
-         [(< n 200) (sleep 1) (loop (add1 n))]
-         [else (error "flush-output-port timed out. Deadlock?")]))]
-    [else (flush-output prt)]))
 
-(provide flush-output-port)
+(struct sane-pipe
+  (flushed-lk ; Semaphore for "flushed" status. 1 means "flushed", 0 means "still has dirty data"
+   mutex-lk ; Semaphore for mutual exclusion of critical sections
+   in ; actual pipe
+   out
+   ))
+
+(define (make-sane-pipe)
+  (define-values (in out) (make-pipe))
+  (sane-pipe (make-semaphore 1)
+             (make-semaphore 1)
+             in out))
+
+(define (sane-pipe-write sp bts)
+  (with-lock (sane-pipe-mutex-lk sp)
+    ; Set status to "dirty" when "flushed" semaphore can be getted.
+    ; If already dirty, stay dirty!
+    (semaphore-try-wait? (sane-pipe-flushed-lk sp)))
+  (write-bytes bts (sane-pipe-out sp)))
+
+(define (sane-pipe-read! sp bts)
+  (define toret (read-bytes-avail! bts (sane-pipe-in sp)))
+  (with-lock (sane-pipe-mutex-lk sp)
+    ; Set status to flushed if nothing left!
+    (when (zero? (pipe-content-length (sane-pipe-in sp)))
+      ; But we shouldn't flush something already flushed
+      (when (not (sync/timeout 0 (semaphore-peek-evt (sane-pipe-flushed-lk sp))))
+        (semaphore-post (sane-pipe-flushed-lk sp)))))
+  toret)
+
+(define (sane-pipe-flush sp)
+  (sync (semaphore-peek-evt (sane-pipe-flushed-lk sp))))
+
+(define (sane-pipe-close sp)
+  ;; just unlock everything, *probably* will work
+  (for ([i 1000])
+    (semaphore-post (sane-pipe-flushed-lk sp)))
+  (close-output-port (sane-pipe-out sp)))
