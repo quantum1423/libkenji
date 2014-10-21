@@ -60,3 +60,5 @@
 
 (provide blake2/256
          blake2/512)
+
+(blake2/256 #"jsdlkfsjdf")
