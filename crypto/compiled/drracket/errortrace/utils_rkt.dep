@@ -1,1 +1,1 @@
-("6.1" ("106e92230234991bfc195895d7033cdd80bfb8d8" . "0e7b906880ec7cff92708490f3eae38900901706") (collects #"racket" #"runtime-config.rkt") (collects #"libkenji" #"assert.rkt") (collects #"racket" #"main.rkt"))
+("6.1" ("106e92230234991bfc195895d7033cdd80bfb8d8" . "be713b7e80c31b84ec85090bb46360011e1f6ba9") (collects #"racket" #"runtime-config.rkt") (collects #"libkenji" #"assert.rkt") (collects #"racket" #"main.rkt"))

@@ -1,4 +1,5 @@
-#lang racket
+#lang racket/base
+(require "control-flow.rkt")
 
 ;; This file implements sockets, a much simplified version of ports.
 
@@ -9,17 +10,19 @@
   (make-socket
    (lambda (lim)
      (define buffer (make-bytes lim))
-     (define n (read-bytes-avail! buffer in))
+     (define n (return-exceptions (read-bytes-avail! buffer in)))
      (cond
+       [(exn:fail? n) eof]
        [(eof-object? n) eof]
        [else (subbytes buffer 0 n)]))
    (lambda (bts)
-     (write-bytes bts out))
+     (write-bytes bts out)
+     (flush-output out))
    (lambda ()
      (close-output-port out)
      (close-input-port in))))
 
-(define (socket-read skt (lim 8192))
+(define (socket-read skt (lim 16384))
   ((_socket-read skt) lim))
 
 (define (socket-read/fixed skt lim)
@@ -37,8 +40,3 @@
   ((_socket-close skt)))
 
 (define make-socket _socket)
-
-(define-syntax-rule (ports->socket expr)
-  ((thunk
-    (define-values (in out) expr)
-    (_ports->socket in out))))

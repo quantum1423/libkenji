@@ -1,5 +1,7 @@
-#lang racket
+#lang racket/base
 (require "logging.rkt")
+(require racket/set)
+(require racket/match)
 
 ;; Big will executor
 
@@ -8,7 +10,7 @@
 
 (void
  (thread
-  (thunk
+  (lambda ()
    (let loop ([n 1])
      (will-execute grand-executor)
      (print-log 'debg "executed will #~a in ~a µs" n (inexact->exact (floor (* last-dur 1000))))
@@ -28,7 +30,7 @@
   (define lst
     (let loop ([n num])
       (cond
-        [(zero? n) empty]
+        [(zero? n) '()]
         [else (cons (modulo n 256)
                     (loop (quotient n 256)))])))
   (bytes-append
@@ -95,6 +97,8 @@
 ;; Functional deque.
 
 (struct deque (a b) #:prefab)
+
+(define empty '())
 
 (define (make-deque)
   (deque empty empty))

@@ -1,4 +1,5 @@
-#lang racket
+#lang racket/base
+(require racket/match)
 (require racket/async-channel)
 (require "control-flow.rkt")
 (require "assert.rkt")
@@ -29,10 +30,11 @@
 
 (define-syntax-rule (yarn exp1 ...)
   (thread
-   (thunk
+   (lambda ()
     (with-handlers ([exn:break? void])
       (guard
        exp1 ...)))))
+(current-thread-initial-stack-size 100)
 
 ;; with-lock: 'nuff said
 (define-syntax-rule (with-lock lck exp1 ...)
@@ -46,7 +48,7 @@
 ;; Using thread-send etc is *UNSAFE*
 
 (define (yarn-send yrn msg)
-  (define replychan (make-chan))
+  (define replychan (make-channel))
   (define tosend (list msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #\f)
@@ -67,7 +69,7 @@
 (define (yarn-reply msg)
   (when (not (channel? (thread-cell-ref __yarn_last_sender)))
     (error "yarn-reply: already replied"))
-  (chan-send (thread-cell-ref __yarn_last_sender) (list 'xaxa msg))
+  (channel-put (thread-cell-ref __yarn_last_sender) (list 'xaxa msg))
   (thread-cell-set! __yarn_last_sender #f))
 
 (define (yarn-recv/imm)

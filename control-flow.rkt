@@ -1,5 +1,7 @@
-#lang racket
+#lang racket/base
+(define empty '())
 (require racket/async-channel)
+(require ffi/unsafe/atomic)
 (provide (all-defined-out))
 
 #| VARIOUS CONTROL FLOW MACROS AND GOODIES |#
@@ -12,14 +14,14 @@
   (parameterize ([__dtor_list (box empty)])
     (dynamic-wind
      void
-     (thunk
+     (lambda ()
       exp1 ...)
-     (thunk
+     (lambda ()
       (for ([el (unbox (__dtor_list))])
         (el))))))
 
 (define-syntax-rule (defer exp1 ...)
-  (set-box! (__dtor_list) (cons (thunk exp1 ...) (unbox (__dtor_list)))))
+  (set-box! (__dtor_list) (cons (lambda () exp1 ...) (unbox (__dtor_list)))))
 
 ;; attributes: assign attributes to arbitrary objects; implemented by weak hash tables
 
@@ -83,3 +85,24 @@
                   [(thread? elem) (break-thread elem)])))
        exp1 ...))))
 
+
+;; Atomic.
+
+(define-syntax-rule (atomic exp1 ...)
+  (begin
+    (start-breakable-atomic)
+    (dynamic-wind
+     void
+     (lambda ()
+      exp1 ...)
+     end-breakable-atomic)))
+
+(provide atomic)
+
+;; Convert fail-exception throwing to exception *returning*.
+
+(define-syntax-rule (return-exceptions exp1 ...)
+  (with-handlers ([exn:fail? (lambda (x) x)])
+    exp1 ...))
+
+(provide return-exceptions)
