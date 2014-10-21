@@ -22,18 +22,18 @@
   (_fun _pointer ; out
         _pointer ; in
         _pointer ; key
-        _byte    ; outlen
-        _int     ; inlen
-        _byte    ; keylen
+        _uint8    ; outlen
+        _uint64     ; inlen
+        _uint8    ; keylen
         -> _int))
 
 (define-blake blake2b
   (_fun _pointer ; out
         _pointer ; in
         _pointer ; key
-        _byte    ; outlen
-        _int     ; inlen
-        _byte    ; keylen
+        _uint8    ; outlen
+        _uint64     ; inlen
+        _uint8    ; keylen
         -> _int))
 
 (define (blake2/256 msg (key #"kenji"))
