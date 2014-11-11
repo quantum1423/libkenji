@@ -17,10 +17,13 @@
 
 ;; A "functional" read-bytes-avail is sorely lacking.
 
-(define (read-bytes-avail prt)
+(define (read-bytes-avail prt (timeout 10))
   (define buffer (make-bytes 49152))
-  (define toret (read-bytes-avail!/enable-break buffer prt))
+  (define toret (sync/timeout/enable-break
+                 timeout
+                 (read-bytes-avail!-evt buffer prt)))
   (cond
+    [(not toret) eof]
     [(eof-object? toret) eof]
     [else (subbytes buffer 0 toret)]))
 
@@ -32,7 +35,7 @@
 (define (make-tube)
   (define sp (make-sane-pipe))
   (define in
-    (make-input-port
+    (make-input-port/read-to-peek
      'tube-in
      (lambda (bts)
        (sane-pipe-read! sp bts))

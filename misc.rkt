@@ -90,7 +90,8 @@
                         [(= i (sub1 (length rst))) (print-tree el (add1 depth)
                                                                #t skip)]
                         [else (print-tree el (add1 depth)
-                                          #f skip)]))]))
+                                          #f skip)]))]
+    [x (displayln x)]))
 
 (provide print-tree)
 
@@ -147,3 +148,15 @@
          deque-not-back
          deque-put-back
          deque->list)
+
+(require (for-syntax racket/base))
+(require (rename-in srfi/26 [cut //]))
+(provide (all-from-out srfi/26)
+         >>)
+
+(define-syntax (>> stx)
+  (syntax-case stx ()
+    [(_ init (callee args ...) ...)
+     (syntax/loc stx
+       (for/fold ([result init]) ([fn (list (// callee args ...) ...)])
+         (fn result)))]))

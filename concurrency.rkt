@@ -31,9 +31,9 @@
 (define-syntax-rule (yarn exp1 ...)
   (thread
    (lambda ()
-    (with-handlers ([exn:break? void])
-      (guard
-       exp1 ...)))))
+     (with-handlers ([exn:break? void])
+       (guard
+        exp1 ...)))))
 (current-thread-initial-stack-size 100)
 
 ;; with-lock: 'nuff said
@@ -97,5 +97,3 @@
     (assert (= j (add1 i)))
     (loop (add1 i)))
   (kill-thread adder))
-
-;(test-yarn)
