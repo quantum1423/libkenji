@@ -105,7 +105,7 @@
     [(fchannel vals rc)
      (enqueue! vals v)
      (enqueue! runnable-queue (current-coroutine))
-     (cor-resume runnable-queue (dequeue! rc))]))
+     (cor-resume (dequeue! rc))]))
 
 (provide make-fchannel
          fchannel-get
