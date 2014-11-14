@@ -104,8 +104,8 @@
      (yield-to-sched)]
     [(fchannel vals rc)
      (enqueue! vals v)
-     (enqueue-front! runnable-queue (dequeue! rc))
-     (yield-to-sched)]))
+     (enqueue! runnable-queue (current-coroutine))
+     (cor-resume runnable-queue (dequeue! rc))]))
 
 (provide make-fchannel
          fchannel-get
