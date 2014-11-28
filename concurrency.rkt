@@ -5,6 +5,8 @@
 (require "assert.rkt")
 (provide (all-defined-out))
 
+(current-thread-initial-stack-size 128)
+
 ;; chans: two unrelated types for async and sync channels is horrible!
 
 (define (chan? ch)
@@ -26,16 +28,18 @@
     [(equal? 0 limit) (make-channel)]
     [else (make-async-channel limit)]))
 
+(define current-recv-chan (make-parameter (make-channel)))
+
 ;; (yarn ...): simple macro for libkenji-managed threads (yarns) to save typing
-
 (define-syntax-rule (yarn exp1 ...)
-  (thread
-   (lambda ()
-     (with-handlers ([exn:break? void])
-       (guard
-        exp1 ...)))))
-(current-thread-initial-stack-size 100)
-
+  (let ([x (thread
+            (lambda ()
+              (with-handlers ([exn:break? void])
+                (parameterize ([current-recv-chan (make-channel)])
+                  (guard
+                   exp1 ...)))))])
+    x))
+  
 ;; with-lock: 'nuff said
 (define-syntax-rule (with-lock lck exp1 ...)
   (begin
@@ -48,28 +52,29 @@
 ;; Using thread-send etc is *UNSAFE*
 
 (define (yarn-send yrn msg)
-  (define replychan (make-channel))
-  (define tosend (list msg replychan))
+  (define replychan (current-recv-chan))
+  (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #\f)
     (error "yarn-send: target yarn died before receiving"))
   (define res (sync replychan
-                    (thread-dead-evt yrn)))
+                    (thread-dead-evt yrn)
+                    ))
   (when (equal? res (thread-dead-evt yrn))
     (error "yarn-send: target yarn died before replying"))
   (match res
-    [(list 'xaxa msg) msg]))
+    [(cons 'xaxa msg) msg]))
 
 (define __yarn_last_sender (make-thread-cell #f))
 (define (yarn-recv)
   (match (thread-receive)
-    [(list msg (? channel? ch)) (thread-cell-set! __yarn_last_sender ch)
-                                 msg]))
+    [(cons msg (? channel? ch)) (thread-cell-set! __yarn_last_sender ch)
+                                msg]))
 
 (define (yarn-reply msg)
   (when (not (channel? (thread-cell-ref __yarn_last_sender)))
     (error "yarn-reply: already replied"))
-  (channel-put (thread-cell-ref __yarn_last_sender) (list 'xaxa msg))
+  (channel-put (thread-cell-ref __yarn_last_sender) (cons 'xaxa msg))
   (thread-cell-set! __yarn_last_sender #f))
 
 (define (yarn-recv/imm)
@@ -77,23 +82,21 @@
     (yarn-reply (void))
     x))
 
-(define (test-yarn)
-  (define adder
-    (yarn
-     (let loop()
-       (define x (yarn-recv))
-       (sleep (* 0.01 (random)))
-       (yarn-reply (add1 x))
-       (loop))))
-  (for ([i 10])
-    (yarn
-     (let loop ([i 0])
-       (displayln i)
-       (define j (yarn-send adder i))
-       (assert (= j (add1 i)))
-       (loop (add1 i)))))
-  (let loop ([i 0])
-    (define j (yarn-send adder i))
-    (assert (= j (add1 i)))
-    (loop (add1 i)))
-  (kill-thread adder))
+(define (yarn-bench n m)
+  (imprison
+   (define str
+     (let loop ([nxt (yarn
+                      (let loop()
+                        (yarn-recv)
+                        (yarn-reply 0)
+                        (loop)))]
+                [i 0])
+       (cond
+         [(= i (sub1 n)) nxt]
+         [else (loop (yarn
+                      (let loop()
+                        (yarn-reply (yarn-send nxt (yarn-recv)))
+                        (loop)))
+                     (add1 i))])))
+   (for ([i m])
+     (yarn-send str i))))

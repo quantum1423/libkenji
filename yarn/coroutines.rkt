@@ -1,6 +1,6 @@
-#lang racket
+#lang web-server
 
-(struct coroutine (cont last-resumer) #:mutable #:transparent)
+(struct coroutine (cont last-resumer) #:mutable)
 (provide (struct-out coroutine))
 (define current-coroutine (make-parameter #f))
 (provide current-coroutine)
@@ -16,18 +16,33 @@
 (provide make-coroutine)
 
 (define (cor-resume other-cor)
-  (let/cc k
+   (lambda (k)
+    (displayln "LEL")
     (set-coroutine-last-resumer! other-cor (current-coroutine))
     (when (current-coroutine)
       (set-coroutine-cont! (current-coroutine) k))
+    (displayln "LEL")
     ((coroutine-cont other-cor))))
 
 (provide cor-resume)
 
-(define (capture-current-coroutine)
-  (let/cc k
-    (when (current-coroutine)
-      (set-coroutine-cont! (current-coroutine) k))
-    (k)))
+(define bounces 10000)
 
-(provide capture-current-coroutine)
+(define alice
+  (make-coroutine
+   (lambda ()
+     (let loop ()
+       (cor-resume bob)
+       (loop)))))
+
+(define bob
+  (make-coroutine
+   (lambda ()
+     (call-with-web-prompt
+      (lambda ()
+     (displayln "BAAB")
+     (for ([i bounces])
+       (cor-resume alice))
+     (displayln "done"))))))
+
+(time (cor-resume bob))

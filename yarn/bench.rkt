@@ -1,6 +1,9 @@
 #lang racket
 (require "kernel.rkt")
 (require racket/async-channel)
+(require profile)
+
+(current-thread-initial-stack-size 100)
 
 (define (ring-bench n m)
   (define last-ch (make-fchannel))
@@ -19,28 +22,26 @@
         [else (loop ch (add1 i))])))
   (for ([i m])
     (fchannel-put strt i)
-    (fchannel-get last-ch))
-  )
+    (fchannel-get last-ch)))
 
 (define (ring-bench/stock n m)
-  (define last-ch (make-async-channel))
+  (define last-ch (make-channel))
   (define strt
     (let loop ([nxt last-ch]
              [i 0])
-    (define ch (make-async-channel))
+    (define ch (make-channel))
     (define thr
       (thread
        (thunk
         (for ([i m])
-        (sync
-         (async-channel-put-evt
-          nxt (sync ch)))))))
+          (channel-put nxt
+                             (channel-get ch))))))
     (cond
       [(= i n) ch]
       [else (loop ch (add1 i))])))
   (for ([i m])
-    (async-channel-put strt i)
-    (async-channel-get last-ch)))
+    (channel-put strt i)
+    (channel-get last-ch)))
 
 
 (define (haha n m)
@@ -48,6 +49,7 @@
 
 (define (lolo n m)
   (ring-bench/stock n m))
+
 
 (llthread
 (for* ([n (list 10 100 1000)]
