@@ -160,3 +160,12 @@
      (syntax/loc stx
        (for/fold ([result init]) ([fn (list (// callee args ...) ...)])
          (fn result)))]))
+
+(define-syntax-rule (space expr)
+  (time
+   (let()
+    (collect-garbage)
+    (define start (current-memory-use))
+    expr
+    (define end (current-memory-use))
+    (printf "~a KiB allocated\n" (/ (- end start) 1024.0)))))

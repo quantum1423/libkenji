@@ -26,34 +26,25 @@
 ;; attributes: assign attributes to arbitrary objects; implemented by weak hash tables
 
 (define __attr_table (make-weak-hash))
-(define __attr_lock (make-semaphore 1))
 
 (define (attr-set! obj key val)
-  (guard
-   (semaphore-wait __attr_lock)
-   (defer (semaphore-post __attr_lock))
+  (atomic
    (when (not (hash-has-key? __attr_table obj))
      (hash-set! __attr_table obj (make-hash)))
    (hash-set! (hash-ref __attr_table obj) key val)))
 
 (define (attr-del! obj key val)
-  (guard
-   (semaphore-wait __attr_lock)
-   (defer (semaphore-post __attr_lock))
+  (atomic
    (when (not (hash-has-key? __attr_table obj))
      (hash-set! __attr_table obj (make-hash)))
    (hash-remove! (hash-ref __attr_table obj) key val)))
 
 (define (attr-get obj key)
-  (guard
-   (semaphore-wait __attr_lock)
-   (defer (semaphore-post __attr_lock))
+  (atomic
    (hash-ref (hash-ref __attr_table obj) key)))
 
 (define (attr-have? obj key)
-  (guard
-   (semaphore-wait __attr_lock)
-   (defer (semaphore-post __attr_lock))
+  (atomic
    (and (hash-has-key? __attr_table obj)
         (hash-has-key? (hash-ref __attr_table obj) key))))
 
@@ -77,12 +68,18 @@
   (let ([cst (make-custodian)])
     (parameterize ([current-custodian cst])
       (guard
-       ;(defer (custodian-shutdown-all cst))
-       (defer (for ([elem (custodian-managed-list cst __god_custodian)])
-                (cond
-                  [(output-port? elem) (close-output-port elem)]
-                  [(input-port? elem) (close-input-port elem)]
-                  [(thread? elem) (break-thread elem)])))
+       (defer (custodian-shutdown-all cst))
+       (defer 
+        (for ([elem (custodian-managed-list cst __god_custodian)])
+          (cond
+            [(output-port? elem) (close-output-port elem)]
+            [(input-port? elem) (close-input-port elem)]
+            [(thread? elem) 
+             (unless (equal? elem (current-thread))
+               (break-thread elem)
+               (unless (sync/timeout 2 (thread-dead-evt elem))
+                 (error "At least one thread refused to die; nuking prison"))
+               )])))
        exp1 ...))))
 
 
