@@ -37,17 +37,21 @@
 
 ;; (yarn ...): simple macro for libkenji-managed threads (yarns) to save typing
 (define-syntax-rule (yarn exp1 ...)
-  (let* ([stevt (make-semaphore 0)]
+  (let* (;[stevt (make-semaphore 0)]
          [x (thread
              (lambda ()
-               (with-handlers ([exn:break? void])
-                 (parameterize ([current-recv-chan (make-channel)])
-                   (guard
-                    (semaphore-post stevt)
-                    exp1 ...))
-                 )
-               ))])
-    (semaphore-wait stevt)
+               (with-handlers ([exn:fail? (lambda (x)
+                                            (printf "Unhandled exception in yarn: ~a\n" 
+                                                    (exn-message x))
+                                            (exit 42))])
+                 (with-handlers ([exn:break? void])
+                   (parameterize ([current-recv-chan (make-channel)])
+                     (guard
+                      ;(semaphore-post stevt)
+                      exp1 ...))
+                   ))
+                 ))])
+    ;(semaphore-wait stevt)
     x))
   
 ;; with-lock: 'nuff said
