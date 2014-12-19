@@ -3,6 +3,7 @@
 (require "control-flow.rkt")
 (require "concurrency.rkt")
 (require racket/port)
+(require data/queue)
 
 #| PORT-RELATED CONVENIENCE FUNCTIONS |#
 
@@ -33,87 +34,49 @@
 ;; The public interface is named "tube", lol.
 
 (define (make-tube)
-  (define sp (make-sane-pipe))
-  (define in
-    (make-input-port/read-to-peek
-     'tube-in
-     (lambda (bts)
-       (sane-pipe-read! sp bts))
+  (define datbuff #f)
+  (define tname (gensym 'tube))
+  ;; This semaphore fires when data is available
+  (define data-avail-sem (make-semaphore 0))
+  ;; This semaphore fires when data is gone
+  (define data-gone-sem (make-semaphore 1))
+  ;; This tells readers to give up
+  (define no-more-reads #f)
+  
+  (define inport
+    (make-input-port
+     ;; name
+     tname
+     ;; read-in
+     (let()
+       (define (read-to bts)
+         (cond
+           [no-more-reads (error "Cannot read from closed tube")]
+           [(not datbuff) (wrap-evt data-avail-sem
+                                    (lambda (evt)
+                                      (read-to bts)))]
+           [(eof-object? datbuff) eof]
+           [else (define toret (min (bytes-length dest)
+                                    (bytes-length datbuff)))
+                 (bytes-copy! dest
+                              0
+                              datbuff
+                              toret)
+                 (set! datbuff (subbytes datbuff toret))
+                 (when (zero? (bytes-length datbuff))
+                   (set! datbuff #f)
+                   (semaphore-post data-gone-sem))
+                 toret]))
+       read-to)
+     ;; peek
      #f
-     (lambda ()
-       (sane-pipe-close sp))))
-  (define out
-    (make-output-port
-     'tube-out
-     (sane-pipe-out sp)
-     (lambda (to-write
-              start-pos
-              end-pos
-              flush?
-              lel)
-       (define x (sane-pipe-write sp to-write start-pos end-pos))
-       x)
+     ;; close
      (lambda()
-       (sync/enable-break (sane-pipe-flush sp))
-       (sane-pipe-close sp))))
-  (values in out))
-
-(provide make-tube)
-
-(struct sane-pipe
-  (flushed-lk ; Semaphore for "flushed" status. 1 means "flushed", 0 means "still has dirty data"
-   in ; actual pipe
-   out
-   ))
-
-(require racket/generator)
-
-(define (make-sane-pipe)
-  (define-values (in out) (make-pipe 65536))
-  (sane-pipe (make-semaphore 1)
-             in out))
-
-(define (sane-pipe-write sp bts a b)
-  (cond
-    [(not (zero? (- b a)))
-     ; Set status to "dirty" when "flushed" semaphore can be getted.
-     ; If already dirty, stay dirty!
-     (semaphore-try-wait? (sane-pipe-flushed-lk sp))
-     (define lel (write-bytes bts (sane-pipe-out sp) a b))
-     lel]
-    [else 0]))
-
-(define (sane-pipe-read! sp bts)
-  (define toret (read-bytes-avail!/enable-break bts (sane-pipe-in sp)))
-  (atomic
-    ; Set status to flushed if nothing left!
-    (when (zero? (pipe-content-length (sane-pipe-in sp)))
-      ; But we shouldn't flush something already flushed
-      (when (not (sync/timeout 0 (semaphore-peek-evt (sane-pipe-flushed-lk sp))))
-        (semaphore-post (sane-pipe-flushed-lk sp)))))
-  toret)
-
-(define (sane-pipe-flush sp)
-  (if (zero? (atomic (pipe-content-length (sane-pipe-in sp))))
-      always-evt
-      (begin
-        (semaphore-peek-evt (sane-pipe-flushed-lk sp)))))
-
-(define (sane-pipe-close sp)
-  ;; just unlock everything, *probably* will work
-  (for ([i 1000])
-    (semaphore-post (sane-pipe-flushed-lk sp)))
-  (close-output-port (sane-pipe-out sp)))
-
-;; With timeout
-
-(define (read-bytes/timeout lel in (timeout 30))
-  (cond
-    [(port-provides-progress-evts? in)
-     (define lol (sync/timeout/enable-break timeout (read-bytes-evt lel in)))
-     (when (not lol)
-       (error "Timeout"))
-     lol]
-    [else (read-bytes lel in)]))
-
-(provide read-bytes/timeout)
+       (set! no-more-reads #f))))
+  
+  (define outport
+    (make-output-port
+     ;; name
+     tname
+     ;; evt
+     data-gone-sem            

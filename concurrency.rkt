@@ -3,9 +3,12 @@
 (require racket/async-channel)
 (require racket/promise)
 (require compatibility/defmacro)
+(require data/heap)
+(require data/queue)
 (require (for-syntax racket))
 (require "control-flow.rkt")
 (require "assert.rkt")
+(require "logging.rkt")
 (provide (all-defined-out))
 
 
@@ -16,45 +19,55 @@
 
 (define (chan? ch)
   (or (channel? ch)
-      (async-channel? ch)))
+      (fasync-channel? ch)))
 
 (define (chan-send ch val)
+  (unless (chan? ch)
+    (error 'chan-send "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-put ch val)]
-    [(async-channel? ch) (async-channel-put ch val)]))
+    [(fasync-channel? ch) (fasync-channel-put ch val)]))
 
 (define (chan-recv ch)
+  (unless (chan? ch)
+    (error 'chan-recv "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-get ch)]
-    [(async-channel? ch) (async-channel-get ch)]))
+    [(fasync-channel? ch) (fasync-channel-get ch)]))
+
+(define (chan-send-evt ch val)
+  (unless (chan? ch)
+    (error 'chan-send-evt "Something other than chan passed!"))
+  (cond
+    [(channel? ch) (channel-put-evt ch val)]
+    [(fasync-channel? ch) (fasync-channel-put-evt ch val)]))
 
 (define (make-chan (limit 0))
   (cond
     [(zero? limit) (make-channel)]
-    [else (make-async-channel limit)]))
+    [else (make-fasync-channel limit)]))
 
 (define current-recv-chan (make-parameter (make-channel)))
 
 ;; (yarn ...): simple macro for libkenji-managed threads (yarns) to save typing
 (define-syntax-rule (yarn exp1 ...)
-  (let* (;[stevt (make-semaphore 0)]
+  (let* ([stevt (make-semaphore 0)]
          [x (thread
              (lambda ()
-               (with-handlers ([exn:fail? (lambda (x)
-                                            (printf "Unhandled exception in yarn: ~a\n" 
-                                                    (exn-message x))
-                                            (exit 42))])
-                 (with-handlers ([exn:break? void])
-                   (parameterize ([current-recv-chan (make-channel)])
-                     (guard
-                      ;(semaphore-post stevt)
-                      exp1 ...))
-                   ))
-                 ))])
-    ;(semaphore-wait stevt)
+               (with-handlers ([exn:break? void])
+                 (parameterize ([current-recv-chan (make-channel)])
+                   (guard
+                    (semaphore-post stevt)
+                    exp1 ...))
+                 )
+               ))])
+    (semaphore-wait stevt)
     x))
-  
-;; with-lock: 'nuff said
+
+;; suicide
+(define (yarn-suicide!) (break-thread (current-thread)))
+
+;; with-semaphore: 'nuff said
 (define-syntax-rule (with-semaphore lck exp1 ...)
   (begin
     (semaphore-wait lck)
@@ -62,10 +75,16 @@
      (defer (semaphore-post lck))
      exp1 ...)))
 
+(define yarn-kill break-thread)
+
 ;; Yarns communicate with blocking, *bidirectional*, channels. Send returns a val.
 ;; Using thread-send etc is *UNSAFE*
 
-(define (yarn-send yrn msg)
+(define (yarn-send yrn . msg)
+  (when (null? msg)
+    (PANIC "yarn-send cannot be called without a message!"))
+  (when (= 1 (length msg))
+    (set! msg (car msg)))
   (define replychan (current-recv-chan))
   (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
@@ -78,6 +97,24 @@
     (error "yarn-send: target yarn died before replying"))
   (match res
     [(cons 'xaxa msg) msg]))
+
+(define (yarn-send/async yrn . msg)
+  (when (null? msg)
+    (PANIC "yarn-send cannot be called without a message!"))
+  (when (= 1 (length msg))
+    (set! msg (car msg)))
+  (define replychan (make-channel))
+  (define tosend (cons msg replychan))
+  (define v (thread-send yrn tosend))
+  (when (equal? v #f)
+    (error "yarn-send: target yarn died before receiving"))
+  (handle-evt (choice-evt (thread-dead-evt yrn)
+                          replychan)
+              (lambda (res)
+                (when (equal? res (thread-dead-evt yrn))
+                  (error "yarn-send: target yarn died before replying"))
+                (match res
+                  [(cons 'xaxa msg) msg]))))
 
 (define __yarn_last_sender (make-thread-cell #f))
 (define (yarn-recv)
@@ -100,6 +137,11 @@
   (wrap-evt (thread-receive-evt)
             (lambda(x)
               (yarn-recv))))
+
+(define (yarn-recv/imm-evt)
+  (wrap-evt (thread-receive-evt)
+            (lambda(x)
+              (yarn-recv/imm))))
 
 (define (yarn-bench n m)
   (imprison
@@ -151,4 +193,72 @@
        (semaphore-post haha)))))
 
 (define (genlock)
-  (box (gensym)))
+  (box (random 1000000)))
+
+;; A yarn whose job is to execute events on a timeline.
+;; Send in lists whose first element is ms to execution, and second element is
+;; task to do.
+(define (make-timer-yarn (warn? #f))
+  (yarn
+   (define hoho (make-heap (λ(a b) (< (car a) (car b)))))
+   (let loop()
+     (select res
+       [(if (zero? (heap-count hoho))
+            never-evt
+            (cdr (heap-min hoho)))
+        (heap-remove-min! hoho)
+        (define x (current-milliseconds))
+        (res)
+        (when (> (- (current-milliseconds) x) 1000)
+          (when warn?
+            (print-log 'warn "Timer action took more than 1 second to complete\n")))
+        (loop)]
+       [(yarn-recv-evt) (match res
+                          [(list (? real? ms)
+                                 task)
+                           (define fire-time (+ (current-inexact-milliseconds)
+                                                ms))
+                           (heap-add! hoho
+                                      (cons fire-time
+                                            (wrap-evt
+                                             (alarm-evt
+                                              fire-time)
+                                             (lambda (evt)
+                                               task))))
+                           (yarn-reply (void))
+                           (loop)]
+                          ['die (yarn-reply (void))])]))))
+
+;; An async channel that is fast
+
+(define (fasync-channel-get-evt fas)
+  (match fas
+    [(fasync-channel cue s1 s2)
+     (wrap-evt s1
+               (lambda(evt)
+                 (with-lock-on fas
+                   (semaphore-post s2)
+                   (dequeue! cue))))]))
+
+(struct fasync-channel (cue s1 s2)
+  #:property prop:evt fasync-channel-get-evt)
+
+(define (make-fasync-channel n)
+  (fasync-channel (make-queue)
+                  (make-semaphore 0)
+                  (make-semaphore n)))
+
+(define (fasync-channel-get fas)
+  (sync (fasync-channel-get-evt fas)))
+
+(define (fasync-channel-put fas val)
+  (sync (fasync-channel-put-evt fas val)))
+
+(define (fasync-channel-put-evt fas val)
+  (match fas
+    [(fasync-channel cue s1 s2)
+     (wrap-evt s2
+               (lambda (evt)
+                 (with-lock-on fas
+                   (enqueue! cue val)
+                   (semaphore-post s1))))]))

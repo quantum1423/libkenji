@@ -1,6 +1,7 @@
 #lang racket/base
 (require racket/format)
 (require racket/date)
+(require ffi/unsafe/atomic)
 (date-display-format 'iso-8601)
 
 (define (format-log lvl str . args)
@@ -22,5 +23,12 @@
 (define print-log
   (lambda x
     (displayln (apply format-log x))))
+
+(define (PANIC str . args)
+  ;; Hang the system
+  ;(start-atomic)
+  ;; Print like Racket does
+  (apply print-log (cons 'fatal (cons str args)))
+  (exit 42))
 
 (provide (all-defined-out))
