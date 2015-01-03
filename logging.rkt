@@ -1,7 +1,6 @@
 #lang racket/base
 (require racket/format)
 (require racket/date)
-(require ffi/unsafe/atomic)
 (date-display-format 'iso-8601)
 
 (define (format-log lvl str . args)
@@ -20,9 +19,14 @@
           (string-upcase (symbol->string lvl))
           (apply format (cons str args))))
 
+(define lk (make-semaphore 1))
+
 (define print-log
   (lambda x
-    (displayln (apply format-log x))))
+    (dynamic-wind
+     (lambda() (semaphore-wait lk))
+     (lambda () (displayln (apply format-log x)))
+     (lambda () (semaphore-post lk)))))
 
 (define (PANIC str . args)
   ;; Hang the system

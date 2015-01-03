@@ -1,11 +1,10 @@
 #lang racket/base
 (require racket/match)
-(require racket/async-channel)
 (require racket/promise)
 (require compatibility/defmacro)
 (require data/heap)
 (require data/queue)
-(require (for-syntax racket))
+(require (for-syntax racket/base))
 (require "control-flow.rkt")
 (require "assert.rkt")
 (require "logging.rkt")
@@ -85,7 +84,7 @@
     (PANIC "yarn-send cannot be called without a message!"))
   (when (= 1 (length msg))
     (set! msg (car msg)))
-  (define replychan (current-recv-chan))
+  (define replychan (make-chan 1))
   (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #f)
@@ -103,7 +102,7 @@
     (PANIC "yarn-send cannot be called without a message!"))
   (when (= 1 (length msg))
     (set! msg (car msg)))
-  (define replychan (make-channel))
+  (define replychan (make-chan 1))
   (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #f)
@@ -119,13 +118,13 @@
 (define __yarn_last_sender (make-thread-cell #f))
 (define (yarn-recv)
   (match (thread-receive)
-    [(cons msg (? channel? ch)) (thread-cell-set! __yarn_last_sender ch)
-                                msg]))
+    [(cons msg (? chan? ch)) (thread-cell-set! __yarn_last_sender ch)
+                             msg]))
 
 (define (yarn-reply msg)
-  (when (not (channel? (thread-cell-ref __yarn_last_sender)))
+  (when (not (chan? (thread-cell-ref __yarn_last_sender)))
     (error "yarn-reply: already replied"))
-  (channel-put (thread-cell-ref __yarn_last_sender) (cons 'xaxa msg))
+  (chan-send (thread-cell-ref __yarn_last_sender) (cons 'xaxa msg))
   (thread-cell-set! __yarn_last_sender #f))
 
 (define (yarn-recv/imm)
@@ -165,13 +164,25 @@
 ;; Select statement, sugar for handle-evt
 
 (define-macro (select rv . rst)
-  `(sync
-    ,@(map
-       (lambda (clause)
-         `(handle-evt ,(car clause)
-                      (lambda (,rv)
-                        ,@(cdr clause))))
-       rst)))
+  (cond
+    [(equal? 'else
+             (caar (reverse rst)))
+     `(sync/timeout (lambda()
+                      ,@(cdr (car (reverse rst))))
+                    ,@(map
+                       (lambda (clause)
+                         `(handle-evt ,(car clause)
+                                      (lambda (,rv)
+                                        ,@(cdr clause))))
+                       (reverse (cdr (reverse rst)))))]
+    [else
+     `(sync
+       ,@(map
+          (lambda (clause)
+            `(handle-evt ,(car clause)
+                         (lambda (,rv)
+                           ,@(cdr clause))))
+          rst))]))
 
 ;; Locks associated with objects
 

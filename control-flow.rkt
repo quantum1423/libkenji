@@ -15,10 +15,10 @@
     (dynamic-wind
      void
      (lambda ()
-      exp1 ...)
+       exp1 ...)
      (lambda ()
-      (for ([el (unbox (__dtor_list))])
-        (el))))))
+       (for ([el (unbox (__dtor_list))])
+         (with-handlers ([exn:fail? (lambda (exn) (displayln "WARNING: Defer thunk failed: ~a\n" (exn-message exn)))]) (el)))))))
 
 (define-syntax-rule (defer exp1 ...)
   (set-box! (__dtor_list) (cons (lambda () exp1 ...) (unbox (__dtor_list)))))
