@@ -27,10 +27,11 @@
 
 ;; Sometimes we just want to for-each close all the ports.
 
-(define (close-port prt)
-  (cond
-    [(input-port? prt) (close-input-port prt)]
-    [(output-port? prt) (close-output-port prt)]))
+(define (close-port . prts)
+  (for ([prt prts])
+    (cond
+      [(input-port? prt) (close-input-port prt)]
+      [(output-port? prt) (close-output-port prt)])))
 
 (provide close-port)
 
