@@ -57,17 +57,17 @@
      (with-handlers ([exn:fail? (λ(x) (close-port cache-out)
                                   (raise x))])
        (select res
-               [cache-in (read-bytes-avail! bts cache-in)]
-               [else
-                (select res
-                        [evt (read-in bts)]
-                        [else (wrap-evt evt
-                                        (lambda (x)
-                                          (define thing (read-in buff))
-                                          (cond
-                                            [(eof-object? thing) (close-port cache-out)]
-                                            [else (write-bytes buff cache-out 0 thing)])
-                                          cache-in))])])))
+         [cache-in (read-bytes-avail! bts cache-in)]
+         [else
+          (select res
+            [evt (read-in bts)]
+            [else (handle-evt evt
+                              (lambda (x)
+                                (define thing (read-in buff))
+                                (cond
+                                  [(eof-object? thing) (close-port cache-out)]
+                                  [else (write-bytes buff cache-out 0 thing)])
+                                cache-in))])])))
    #f
    close))
 
@@ -79,26 +79,26 @@
      (with-handlers ([exn:fail? (λ(x) (close-port cache-out)
                                   (raise x))])
        (select res
-               [cache-in (read-bytes-avail! bts cache-in)]
-               [else
-                (select res
-                        [evt (define hoho (read-in))
-                             (cond
-                               [(eof-object? hoho) (close-port cache-out)
-                                                   eof]
-                               [(< (bytes-length hoho) (bytes-length bts))
-                                (bytes-copy! bts 0 hoho)
-                                (bytes-length hoho)]
-                               [else (bytes-copy! bts 0 (subbytes hoho 0 (bytes-length bts)))
-                                     (write-bytes (subbytes hoho (bytes-length bts)) cache-out)
-                                     (bytes-length bts)])]
-                        [else (wrap-evt evt
-                                        (lambda (x)
-                                          (define thing (read-in))
-                                          (cond
-                                            [(eof-object? thing) (close-port cache-out)]
-                                            [else (write-bytes thing cache-out)])
-                                          cache-in))])])))
+         [cache-in (read-bytes-avail! bts cache-in)]
+         [else
+          (select res
+            [evt (define hoho (read-in))
+                 (cond
+                   [(eof-object? hoho) (close-port cache-out)
+                                       eof]
+                   [(< (bytes-length hoho) (bytes-length bts))
+                    (bytes-copy! bts 0 hoho)
+                    (bytes-length hoho)]
+                   [else (bytes-copy! bts 0 (subbytes hoho 0 (bytes-length bts)))
+                         (write-bytes (subbytes hoho (bytes-length bts)) cache-out)
+                         (bytes-length bts)])]
+            [else (handle-evt evt
+                              (lambda (x)
+                                (define thing (read-in))
+                                (cond
+                                  [(eof-object? thing) (close-port cache-out)]
+                                  [else (write-bytes thing cache-out)])
+                                cache-in))])])))
    #f
    close))
 

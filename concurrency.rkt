@@ -231,7 +231,7 @@
                                                 ms))
                            (heap-add! hoho
                                       (cons fire-time
-                                            (wrap-evt
+                                            (handle-evt
                                              (alarm-evt
                                               fire-time)
                                              (lambda (evt)
@@ -245,7 +245,7 @@
 (define (fasync-channel-get-evt fas)
   (match fas
     [(fasync-channel cue s1 s2)
-     (wrap-evt s1
+     (handle-evt s1
                (lambda(evt)
                  (with-lock-on fas
                    (semaphore-post s2)
@@ -268,7 +268,7 @@
 (define (fasync-channel-put-evt fas val)
   (match fas
     [(fasync-channel cue s1 s2)
-     (wrap-evt s2
+     (handle-evt s2
                (lambda (evt)
                  (with-lock-on fas
                    (enqueue! cue val)
