@@ -21,22 +21,16 @@
       (fasync-channel? ch)))
 
 (define (chan-send ch val)
-  (unless (chan? ch)
-    (error 'chan-send "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-put ch val)]
     [(fasync-channel? ch) (fasync-channel-put ch val)]))
 
 (define (chan-recv ch)
-  (unless (chan? ch)
-    (error 'chan-recv "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-get ch)]
     [(fasync-channel? ch) (fasync-channel-get ch)]))
 
 (define (chan-send-evt ch val)
-  (unless (chan? ch)
-    (error 'chan-send-evt "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-put-evt ch val)]
     [(fasync-channel? ch) (fasync-channel-put-evt ch val)]))
@@ -84,17 +78,12 @@
     (PANIC "yarn-send cannot be called without a message!"))
   (when (= 1 (length msg))
     (set! msg (car msg)))
-  (define replychan (make-chan 1))
+  (define replychan (current-recv-chan))
   (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #f)
     (error "yarn-send: target yarn died before receiving"))
-  (define res (sync replychan
-                    (thread-dead-evt yrn)
-                    ))
-  (when (equal? res (thread-dead-evt yrn))
-    (error "yarn-send: target yarn died before replying"))
-  (match res
+  (match (chan-recv replychan)
     [(cons 'xaxa msg) msg]))
 
 (define (yarn-send/async yrn . msg)
@@ -273,3 +262,12 @@
                  (with-lock-on fas
                    (enqueue! cue val)
                    (semaphore-post s1))))]))
+
+#|
+(require profile)
+(require profile/render-graphviz)
+(profile-thunk
+ (lambda () (time (yarn-bench 1000 500)))
+ #:threads #t
+ #:render render
+ #:use-errortrace? #t)|#

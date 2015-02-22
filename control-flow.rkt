@@ -2,26 +2,30 @@
 (define empty '())
 (require racket/async-channel)
 (require ffi/unsafe/atomic)
+(require compatibility/defmacro)
+(require (for-syntax racket/base))
 (provide (all-defined-out))
 
 #| VARIOUS CONTROL FLOW MACROS AND GOODIES |#
 
 ;; guard/defer: deferred thunks are run when the guard is exited
 
-(define __dtor_list (make-parameter (box empty)))
+(define-macro (guard . rst)
+  `(let ([@@current-defer-thunks '()])
+     (dynamic-wind
+      void
+      (lambda () . ,rst)
+      (lambda () (for ([i @@current-defer-thunks])
+                   (with-handlers ([exn:fail? (λ(exqqq)
+                                                (fprintf (current-error-port)
+                                                         "Warning: exception in defer thunk ~v"
+                                                         (exn-message exqqq)))])
+                     (i)))))))
 
-(define-syntax-rule (guard exp1 ...)
-  (parameterize ([__dtor_list (box empty)])
-    (dynamic-wind
-     void
-     (lambda ()
-       exp1 ...)
-     (lambda ()
-       (for ([el (unbox (__dtor_list))])
-         (with-handlers ([exn:fail? (lambda (exn) (printf "WARNING: Defer thunk failed: ~a\n" (exn-message exn)))]) (el)))))))
+(define-macro (defer expr)
+  `(set! @@current-defer-thunks
+         (cons (lambda() ,expr) @@current-defer-thunks)))
 
-(define-syntax-rule (defer exp1 ...)
-  (set-box! (__dtor_list) (cons (lambda () exp1 ...) (unbox (__dtor_list)))))
 
 ;; attributes: assign attributes to arbitrary objects; implemented by weak hash tables
 
