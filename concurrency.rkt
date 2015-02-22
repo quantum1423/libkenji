@@ -43,30 +43,23 @@
 (define current-recv-chan (make-parameter (make-channel)))
 
 ;; (yarn ...): simple macro for libkenji-managed threads (yarns) to save typing
-(define-syntax-rule (yarn exp1 ...)
-  (let* ([stevt (make-semaphore 0)]
-         [x (thread
-             (lambda ()
-               (with-handlers ([exn:break? void])
-                 (parameterize ([current-recv-chan (make-channel)])
-                   (guard
-                    (semaphore-post stevt)
-                    exp1 ...))
-                 )
-               ))])
-    (semaphore-wait stevt)
-    x))
+(define-macro (yarn . rst)
+  `(thread
+    (lambda ()
+      (with-handlers ([exn:fail? void])
+        (guard
+         . ,rst)))))
 
 ;; suicide
 (define (yarn-suicide!) (break-thread (current-thread)))
 
 ;; with-semaphore: 'nuff said
-(define-syntax-rule (with-semaphore lck exp1 ...)
-  (begin
-    (semaphore-wait lck)
-    (guard
-     (defer (semaphore-post lck))
-     exp1 ...)))
+(define-macro (with-semaphore lck exp1 . rst)
+  `(begin
+     (semaphore-wait ,lck)
+     (guard
+      (defer (semaphore-post ,lck))
+      ,exp1 . ,rst)))
 
 (define yarn-kill break-thread)
 
