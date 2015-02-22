@@ -21,16 +21,22 @@
       (fasync-channel? ch)))
 
 (define (chan-send ch val)
+  (unless (chan? ch)
+    (error 'chan-send "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-put ch val)]
     [(fasync-channel? ch) (fasync-channel-put ch val)]))
 
 (define (chan-recv ch)
+  (unless (chan? ch)
+    (error 'chan-recv "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-get ch)]
     [(fasync-channel? ch) (fasync-channel-get ch)]))
 
 (define (chan-send-evt ch val)
+  (unless (chan? ch)
+    (error 'chan-send-evt "Something other than chan passed!"))
   (cond
     [(channel? ch) (channel-put-evt ch val)]
     [(fasync-channel? ch) (fasync-channel-put-evt ch val)]))
@@ -43,23 +49,30 @@
 (define current-recv-chan (make-parameter (make-channel)))
 
 ;; (yarn ...): simple macro for libkenji-managed threads (yarns) to save typing
-(define-macro (yarn . rst)
-  `(thread
-    (lambda ()
-      (with-handlers ([exn:fail? void])
-        (guard
-         . ,rst)))))
+(define-syntax-rule (yarn exp1 ...)
+  (let* ([stevt (make-semaphore 0)]
+         [x (thread
+             (lambda ()
+               (with-handlers ([exn:break? void])
+                 (parameterize ([current-recv-chan (make-channel)])
+                   (guard
+                    (semaphore-post stevt)
+                    exp1 ...))
+                 )
+               ))])
+    (semaphore-wait stevt)
+    x))
 
 ;; suicide
 (define (yarn-suicide!) (break-thread (current-thread)))
 
 ;; with-semaphore: 'nuff said
-(define-macro (with-semaphore lck exp1 . rst)
-  `(begin
-     (semaphore-wait ,lck)
-     (guard
-      (defer (semaphore-post ,lck))
-      ,exp1 . ,rst)))
+(define-syntax-rule (with-semaphore lck exp1 ...)
+  (begin
+    (semaphore-wait lck)
+    (guard
+     (defer (semaphore-post lck))
+     exp1 ...)))
 
 (define yarn-kill break-thread)
 
@@ -71,12 +84,17 @@
     (PANIC "yarn-send cannot be called without a message!"))
   (when (= 1 (length msg))
     (set! msg (car msg)))
-  (define replychan (current-recv-chan))
+  (define replychan (make-chan 1))
   (define tosend (cons msg replychan))
   (define v (thread-send yrn tosend))
   (when (equal? v #f)
     (error "yarn-send: target yarn died before receiving"))
-  (match (chan-recv replychan)
+  (define res (sync replychan
+                    (thread-dead-evt yrn)
+                    ))
+  (when (equal? res (thread-dead-evt yrn))
+    (error "yarn-send: target yarn died before replying"))
+  (match res
     [(cons 'xaxa msg) msg]))
 
 (define (yarn-send/async yrn . msg)
@@ -255,12 +273,3 @@
                  (with-lock-on fas
                    (enqueue! cue val)
                    (semaphore-post s1))))]))
-
-#|
-(require profile)
-(require profile/render-graphviz)
-(profile-thunk
- (lambda () (time (yarn-bench 1000 500)))
- #:threads #t
- #:render render
- #:use-errortrace? #t)|#
