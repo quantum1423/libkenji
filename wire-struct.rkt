@@ -4,8 +4,9 @@
            racket/pretty))
 (require (for-syntax racket/match))
 (require compatibility/defmacro)
+(provide define-wire-struct)
 
-(define-macro (define-wire-struct name pairs)
+(define-macro (define-wire-struct name . pairs)
   (define smname (string-downcase
                   (symbol->string (assert name symbol?))))
   (define args (cast (map car pairs) (Listof Symbol)))
@@ -17,8 +18,6 @@
                #:when (symbol? (third lol)))
       (values (third lol) (first lol)))
      (HashTable Symbol Symbol)))
-  (pretty-print pairs)
-  (pretty-print length-link)
   `(begin
      (struct ,name
        ,(for/list ([i pairs])
@@ -73,7 +72,8 @@
                                                          #t))]
                   [(list (? symbol? elem) ':: (? symbol? ref)) (list elem 
                                                                      `(cast 
-                                                                       (read-bytes ,ref $input) Bytes))]))
+                                                                       (read-bytes ,ref $input)
+                                                                       Bytes))]))
          (,name . ,args)))
      
      (: ,write-name (-> ,name Output-Port Void))
