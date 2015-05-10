@@ -13,11 +13,13 @@
 (define (tcp-connect/no-buffer . rst)
   (define-values (in out) (apply tcp-connect rst))
   (file-stream-buffer-mode out 'none)
+  (file-stream-buffer-mode in 'none)
   (values in out))
 
 (define (tcp-accept/no-buffer . rst)
   (define-values (in out) (apply tcp-accept rst))
   (file-stream-buffer-mode out 'none)
+  (file-stream-buffer-mode in 'none)
   (values in out))
 
 (provide (rename-out (tcp-connect/no-buffer tcp-connect)
@@ -104,3 +106,35 @@
 
 (provide make-input-port/sane
          make-input-port/buffered)
+
+;; TCP handling functions
+
+(define (tcp-serve #:port port
+                   #:host (host "127.0.0.1")
+                   #:handler handler)
+  (define listener (tcp-listen port 256 #t host))
+  (yarn
+   (let loop ()
+     (define-values (in out) (with-handlers ([exn:fail? (lambda _
+                                                          (yarn-suicide!))])
+                               (tcp-accept/no-buffer listener)))
+     (yarn
+      (defer (close-port in out))
+      (handler in out))
+     (loop)))
+  listener)
+
+;; Safer copy-port
+
+(define (safe-copy-port in out)
+  (define hoho (make-bytes 16384))
+  (let loop()
+    (define lol (read-bytes-avail! hoho in))
+    (cond
+      [(eof-object? lol) (void)]
+      [else (write-bytes hoho out 0 lol)
+            (loop)])))
+
+;(provide (rename-out (safe-copy-port copy-port)))
+
+(provide tcp-serve)
