@@ -1,3 +1,4 @@
 #lang setup/infotab
 
-(define deps '("base" "compatibility-lib" "data-lib" "srfi-lib"))
+(define collection "libkenji")
+(define deps '("base" "compatibility-lib" "data-lib" "srfi-lib" "pfds")
