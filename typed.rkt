@@ -27,7 +27,10 @@
          chan-send
          chan-recv
          chan-send-evt
-         chan-recv-evt)
+         chan-recv-evt
+         guard
+         defer
+         yarn)
 
 (define-macro (guard . rst)
   `(let ([_HANDLER : (-> Void) (λ() (void))])
@@ -36,10 +39,10 @@
       (lambda () . ,rst)
       (lambda() (_HANDLER)))))
 
-(define-macro (defer expr)
+(define-macro (defer . expr)
   `(let ([_ohd _HANDLER])
      (set! _HANDLER
-           (λ() ,expr (_ohd)))))
+           (λ() (begin ,@expr) (_ohd)))))
 
 (define-macro (yarn . rst)
   `(thread
