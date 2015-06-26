@@ -20,7 +20,8 @@
                        )
 
 (require/typed/provide "main.rkt"
-                       [le->number (-> Bytes Nonnegative-Integer)])
+                       [le->number (-> Bytes Nonnegative-Integer)]
+                       [print-log (-> Symbol String Any * Void)])
 
 (provide with-semaphore
          make-chan
