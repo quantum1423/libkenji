@@ -1,3 +1,6 @@
 #lang setup/infotab
 
-(define deps '("base" "compatibility-lib" "data-lib" "srfi-lib"))
+(define deps '("pfds"
+               "typed-racket-lib"
+               "unstable-contract-lib"
+               "base" "compatibility-lib" "data-lib" "srfi-lib"))
